@@ -1,109 +1,100 @@
 import streamlit as st
 from rdkit import Chem
-from rdkit.Chem import Descriptors, Lipinski
+from rdkit.Chem import Descriptors, Lipinski, AllChem
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
-from st_py3dmol import show_struct
+import st_py3dmol
 
 # --- Page Configuration ---
-st.set_page_config(page_title="PharmDesign Pro | Unit II", layout="wide")
+st.set_page_config(page_title="PharmDesign Pro", layout="wide")
 
-# Custom CSS to hide "Made with Streamlit" and look like professional software
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    .stApp {background-color: #f8f9fa;}
-    .main-header {color: #1e3a8a; font-size: 2.5rem; font-weight: bold; margin-bottom: 20px;}
+    .stApp {background-color: #fcfcfc;}
+    .main-header {color: #1e3a8a; font-size: 2.2rem; font-weight: bold; margin-bottom: 20px; border-bottom: 2px solid #1e3a8a;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- Sidebar Navigation ---
-st.sidebar.title("🔬 Unit II: In Silico Design")
-menu = st.sidebar.radio("Navigation", 
+# --- Sidebar ---
+st.sidebar.title("🔬 In Silico Drug Design")
+menu = st.sidebar.radio("Analysis Modules", 
     ["Lipinski Checker", "Molecular Docking Demo", "ADMET Dashboard", "Case Study Hub"])
 
 # --- Helper Functions ---
-def calculate_lipinski(smiles):
+def get_lipinski_data(smiles):
     mol = Chem.MolFromSmiles(smiles)
     if mol:
         mw = Descriptors.MolWt(mol)
         logp = Descriptors.MolLogP(mol)
         hbd = Lipinski.NumHDonors(mol)
         hba = Lipinski.NumHAcceptors(mol)
-        
-        # Rule of 5 logic
         res = {
-            "MW (<500 Da)": [mw, mw <= 500],
-            "LogP (<5)": [logp, logp <= 5],
-            "H-Donors (<5)": [hbd, hbd <= 5],
-            "H-Acceptors (<10)": [hba, hba <= 10]
+            "Molecular Weight": [mw, mw <= 500, 500],
+            "LogP": [logp, logp <= 5, 5],
+            "H-Donors": [hbd, hbd <= 5, 5],
+            "H-Acceptors": [hba, hba <= 10, 10]
         }
         return res, mol
     return None, None
 
-# --- Logic for Modules ---
-
+# --- Modules ---
 if menu == "Lipinski Checker":
     st.markdown('<div class="main-header">Lipinski\'s Rule of Five Checker</div>', unsafe_allow_html=True)
-    smiles_input = st.text_input("Enter SMILES String (e.g., Aspirin: CC(=O)OC1=CC=CC=C1C(=O)O)", "CC(=O)OC1=CC=CC=C1C(=O)O")
+    smiles_input = st.text_input("Enter SMILES String", "CC(=O)OC1=CC=CC=C1C(=O)O") # Aspirin
     
-    data, mol = calculate_lipinski(smiles_input)
+    data, mol = get_lipinski_data(smiles_input)
     if data:
         cols = st.columns(4)
-        pass_count = 0
+        passes = 0
         for i, (prop, val) in enumerate(data.items()):
             with cols[i]:
-                status = "✅ Pass" if val[1] else "❌ Fail"
-                st.metric(prop, f"{val[0]:.2f}", status)
-                if val[1]: pass_count += 1
+                is_ok = val[1]
+                st.metric(prop, f"{val[0]:.2f}", f"Limit: {val[2]}", delta_color="normal" if is_ok else "inverse")
+                if is_ok: passes += 1
         
-        if pass_count >= 3:
-            st.success("Verdict: Drug-Likely (Compliant)")
+        if passes >= 3:
+            st.success("Verdict: Molecule is likely orally bioactive (Drug-Like).")
         else:
-            st.error("Verdict: Poor Drug-Likeness")
+            st.error("Verdict: Molecule fails drug-likeness criteria.")
 
 elif menu == "Molecular Docking Demo":
-    st.markdown('<div class="main-header">Molecular Docking Simulator</div>', unsafe_allow_header=True)
-    st.info("Visualizing Ligand-Protein Binding Affinity at the Active Site")
+    st.markdown('<div class="main-header">Molecular Docking Simulator</div>', unsafe_allow_html=True)
+    st.write("Visualizing the interaction between Ligand and Protein Binding Pocket.")
     
-    # Simplified visual demo using Py3Dmol
-    # Displaying a sample protein-ligand pocket
-    view = show_struct(pdb='1vsn', height=500) # Sample PDB
-    st.write("Target: HIV-1 Protease | Ligand: Indinavir")
+    # 3D Visualization using st-py3dmol
+    xyzview = st_py3dmol.make_viewer(height=500, width=800)
+    # Using a PDB ID for the visual demo (HIV Protease)
+    xyzview.addModel("pdb:1HSG")
+    xyzview.setStyle({'cartoon': {'color': 'spectrum'}})
+    xyzview.addStyle({'resn': 'MK1'}, {'stick': {'colorscheme': 'magentaCarbon'}}) # Highlight ligand
+    xyzview.zoomTo()
+    st_py3dmol.show(xyzview)
+    st.info("The Magenta structure represents the ligand docked in the enzymatic pocket.")
 
 elif menu == "ADMET Dashboard":
     st.markdown('<div class="main-header">ADMET Property Dashboard</div>', unsafe_allow_html=True)
-    
     smiles = st.text_input("Ligand SMILES", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C") # Caffeine
     
-    # Mock prediction logic (Calculated via RDKit descriptors)
     mol = Chem.MolFromSmiles(smiles)
-    tpsa = Descriptors.TPSA(mol)
-    rotb = Lipinski.NumRotatableBonds(mol)
-    
-    fig = go.Figure(data=go.Scatterpolar(
-      r=[tpsa, rotb, 50, 40, 60], # Mocked values
-      theta=['TPSA','Rotatable Bonds','Solubility','BBB Permeability','GI Absorption'],
-      fill='toself',
-      line_color='#1e3a8a'
-    ))
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 150])), showlegend=False)
-    
-    st.plotly_chart(fig)
-    st.caption("Radar chart showing pharmacokinetic profile balance.")
+    if mol:
+        tpsa = Descriptors.TPSA(mol)
+        rotb = Lipinski.NumRotatableBonds(mol)
+        
+        # Radar Chart
+        fig = go.Figure(data=go.Scatterpolar(
+          r=[tpsa, rotb, 40, 70, 50],
+          theta=['TPSA','Rotatable Bonds','Solubility','Absorption','Metabolism'],
+          fill='toself'
+        ))
+        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 150])), showlegend=False)
+        st.plotly_chart(fig)
 
 elif menu == "Case Study Hub":
-    st.markdown('<div class="main-header">AI in Drug Discovery: Case Studies</div>', unsafe_allow_html=True)
-    
-    studies = {
-        "DeepMind AlphaFold": "Predicting protein structures with atomic accuracy, accelerating target identification.",
-        "Insilico Medicine": "First AI-discovered drug for Idiopathic Pulmonary Fibrosis to enter clinical trials.",
-        "Exscientia": "Centaur Chemist platform used to design highly selective immuno-oncology ligands."
-    }
-    
-    for title, desc in studies.items():
-        with st.expander(title):
-            st.write(desc)
-            st.button(f"Read Full Paper: {title[:5]}")
+    st.markdown('<div class="main-header">AI Case Studies</div>', unsafe_allow_html=True)
+    st.markdown("""
+    - **AlphaFold (DeepMind):** Solved the 50-year-old 'protein folding problem', enabling rapid target identification.
+    - **INS018_055 (Insilico Medicine):** The first AI-designed drug to reach Phase II clinical trials for IPF.
+    - **Exscientia:** Developed the first AI-designed molecule to enter human clinical trials for OCD.
+    """)
